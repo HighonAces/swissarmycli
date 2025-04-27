@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"text/tabwriter"
 
+	"github.com/HighonAces/swissarmycli/internal/k8s/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
@@ -19,10 +20,16 @@ import (
 
 // ShowNodeUsage displays CPU and memory requests and limits for all nodes
 func ShowNodeUsage() error {
-	// Create Kubernetes client
-	clientset, metricsClient, err := getKubernetesClients()
+	clientset, err := common.GetKubernetesClient() // Use the new public function
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)
+	}
+
+	metricsClient, err := common.GetMetricsClient() // Use the new public function
+	if err != nil {
+		// Decide how to handle metrics client failure. Maybe just log and continue?
+		fmt.Fprintf(os.Stderr, "Warning: could not create metrics client: %v. Usage data will be unavailable.\n", err)
+		// metricsClient will be nil, the rest of the code needs to handle this gracefully
 	}
 
 	// Get all nodes
