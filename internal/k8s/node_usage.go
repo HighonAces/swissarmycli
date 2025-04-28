@@ -4,16 +4,12 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"text/tabwriter"
 
 	"github.com/HighonAces/swissarmycli/internal/k8s/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
 	"k8s.io/metrics/pkg/client/clientset/versioned"
 )
@@ -39,7 +35,7 @@ func ShowNodeUsage() error {
 	}
 
 	fmt.Println("Fetching node resource usage information...")
-
+	const divisorGiB = float64(1024 * 1024 * 1024)
 	// Create a new tabwriter to format the output
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NODE\tCPU CAPACITY\tCPU REQUESTS\tCPU LIMITS\tCPU USAGE\tMEMORY CAPACITY\tMEMORY REQUESTS\tMEMORY LIMITS\tMEMORY USAGE")
@@ -56,7 +52,7 @@ func ShowNodeUsage() error {
 
 		// Get node capacity
 		cpuCapacity := node.Status.Capacity.Cpu().MilliValue()
-		memoryCapacity := node.Status.Capacity.Memory().Value() / (1024 * 1024) // Convert to MiB
+		memoryCapacity := float64(node.Status.Capacity.Memory().Value()) / divisorGiB // Convert to MiB
 
 		// Get all pods on this node
 		fieldSelector := fields.SelectorFromSet(fields.Set{"spec.nodeName": nodeName})
@@ -69,7 +65,7 @@ func ShowNodeUsage() error {
 
 		// Calculate total resource requests and limits for the node
 		var cpuRequests, cpuLimits int64
-		var memoryRequests, memoryLimits int64
+		var memoryRequests, memoryLimits float64
 
 		for _, pod := range pods.Items {
 			// Skip pods that are not running
@@ -86,14 +82,14 @@ func ShowNodeUsage() error {
 					cpuRequests += cpu.MilliValue()
 				}
 				if memory, ok := requests[corev1.ResourceMemory]; ok {
-					memoryRequests += memory.Value() / (1024 * 1024) // Convert to MiB
+					memoryRequests += float64(memory.Value()) / divisorGiB // Convert to MiB
 				}
 
 				if cpu, ok := limits[corev1.ResourceCPU]; ok {
 					cpuLimits += cpu.MilliValue()
 				}
 				if memory, ok := limits[corev1.ResourceMemory]; ok {
-					memoryLimits += memory.Value() / (1024 * 1024) // Convert to MiB
+					memoryLimits += float64(memory.Value()) / divisorGiB // Convert to MiB
 				}
 			}
 		}
@@ -102,61 +98,52 @@ func ShowNodeUsage() error {
 		var cpuUsage, memoryUsage string
 		if nodeMetrics != nil {
 			cpuUsageValue := nodeMetrics.Usage.Cpu().MilliValue()
-			memoryUsageValue := nodeMetrics.Usage.Memory().Value() / (1024 * 1024) // Convert to MiB
-			cpuUsage = fmt.Sprintf("%dm (%d%%)", cpuUsageValue, cpuUsageValue*100/cpuCapacity)
-			memoryUsage = fmt.Sprintf("%dMi (%d%%)", memoryUsageValue, memoryUsageValue*100/memoryCapacity)
+			cpuUsagePercent := int64(0)
+			if cpuCapacity > 0 { // Avoid division by zero
+				cpuUsagePercent = cpuUsageValue * 100 / cpuCapacity
+			}
+			memoryUsageValue := float64(nodeMetrics.Usage.Memory().Value()) / divisorGiB // Convert to MiB
+			memoryUsagePercent := float64(0.0)                                           // Default to 0.0
+			if memoryCapacity > 0.0 {                                                    // Avoid division by zero (use float comparison)
+				memoryUsagePercent = (memoryUsageValue * 100.0) / memoryCapacity
+			}
+			cpuUsage = fmt.Sprintf("%dm (%d%%)", cpuUsageValue, cpuUsagePercent)
+			memoryUsage = fmt.Sprintf("%dMi (%d%%)", memoryUsageValue, memoryUsagePercent)
 		} else {
 			cpuUsage = "N/A"
 			memoryUsage = "N/A"
 		}
 
+		// --- CHANGE: Calculate percentages using float for memory ---
+		cpuReqPercent := int64(0)
+		cpuLimPercent := int64(0)
+		memReqPercent := float64(0.0)
+		memLimPercent := float64(0.0)
+
+		if cpuCapacity > 0 {
+			cpuReqPercent = cpuRequests * 100 / cpuCapacity
+			cpuLimPercent = cpuLimits * 100 / cpuCapacity
+		}
+		if memoryCapacity > 0.0 { // Use float comparison
+			memReqPercent = (memoryRequests * 100.0) / memoryCapacity
+			memLimPercent = (memoryLimits * 100.0) / memoryCapacity
+		}
+
 		// Print row for this node
-		fmt.Fprintf(w, "%s\t%dm\t%dm (%d%%)\t%dm (%d%%)\t%s\t%dMi\t%dMi (%d%%)\t%dMi (%d%%)\t%s\n",
+		fmt.Fprintf(w, "%s\t%dm\t%dm (%d%%)\t%dm (%d%%)\t%s\t%.2fGiB\t%.2fGiB (%.1f%%)\t%.2fGiB (%.1f%%)\t%s\n",
 			nodeName,
 			cpuCapacity,
-			cpuRequests, cpuRequests*100/cpuCapacity,
-			cpuLimits, cpuLimits*100/cpuCapacity,
+			cpuRequests, cpuReqPercent,
+			cpuLimits, cpuLimPercent,
 			cpuUsage,
 			memoryCapacity,
-			memoryRequests, memoryRequests*100/memoryCapacity,
-			memoryLimits, memoryLimits*100/memoryCapacity,
+			memoryRequests, memReqPercent,
+			memoryLimits, memLimPercent,
 			memoryUsage)
 	}
 
 	w.Flush()
 	return nil
-}
-
-// getKubernetesClients creates the Kubernetes clientset and metrics clientset
-func getKubernetesClients() (*kubernetes.Clientset, *versioned.Clientset, error) {
-	// Find home directory for kubeconfig
-	home := homedir.HomeDir()
-	kubeconfigPath := filepath.Join(home, ".kube", "config")
-
-	// Override with KUBECONFIG env var if present
-	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
-		kubeconfigPath = kubeconfig
-	}
-
-	// Build config from kubeconfig file
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error building kubeconfig: %w", err)
-	}
-
-	// Create clientset for API resources
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error creating Kubernetes client: %w", err)
-	}
-
-	// Create metrics clientset for node metrics
-	metricsClient, err := versioned.NewForConfig(config)
-	if err != nil {
-		return clientset, nil, fmt.Errorf("error creating Metrics client: %w", err)
-	}
-
-	return clientset, metricsClient, nil
 }
 
 // getNodeMetrics fetches metrics for a specific node
