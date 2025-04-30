@@ -33,7 +33,7 @@ type InstanceData struct {
 	ID             string
 	State          string
 	Health         string
-	AZ             string
+	IP             string
 	Type           string
 	LaunchTime     time.Time
 	ProtectedScale bool
@@ -105,7 +105,7 @@ func Monitor(asgName string, options MonitorOptions) error {
 
 	// Add components to the flex container
 	flex.AddItem(dashboard, 0, 1, false)
-	flex.AddItem(logView, 5, 1, false)
+	flex.AddItem(logView, 7, 1, false)
 
 	// Function to update the dashboard display
 	updateDashboard := func() {
@@ -179,7 +179,7 @@ func Monitor(asgName string, options MonitorOptions) error {
 // renderASGDashboard creates a formatted display of ASG information
 func renderASGDashboard(view *tview.TextView, asg ASGData) {
 	// Header
-	fmt.Fprintf(view, "╔════════════════════════ AWS Auto Scaling Group Monitor ════════════════════════╗\n")
+	fmt.Fprintf(view, "╔═══ r-refresh ═════════ AWS Auto Scaling Group Monitor ══════ q-quit ===═══════╗\n")
 	fmt.Fprintf(view, "║ ASG Name: %-56s Refreshed: %s ║\n", asg.Name, time.Now().Format("15:04:05"))
 	fmt.Fprintf(view, "╠═══════════════════════════════════════════════════════════════════════════════╣\n")
 
@@ -201,7 +201,7 @@ func renderASGDashboard(view *tview.TextView, asg ASGData) {
 
 	// Instances section
 	fmt.Fprintf(view, "╠═════════════════════════════ INSTANCES ══════════════════════════════════════╣\n")
-	fmt.Fprintf(view, "║ ID                    │ STATE     │ HEALTH   │ AZ        │ TYPE     │ AGE     ║\n")
+	fmt.Fprintf(view, "║ ID                    │ STATE     │ HEALTH   │ IP        │ TYPE     │ AGE     ║\n")
 	fmt.Fprintf(view, "╟──────────────────────┼──────────┼─────────┼──────────┼─────────┼─────────╢\n")
 
 	for _, instance := range asg.Instances {
@@ -212,7 +212,7 @@ func renderASGDashboard(view *tview.TextView, asg ASGData) {
 			instance.ID,
 			instance.State,
 			instance.Health,
-			instance.AZ,
+			instance.IP,
 			instance.Type,
 			ageStr)
 	}
@@ -309,11 +309,17 @@ func fetchASGData(sess *session.Session, asgName string) (ASGData, error) {
 	ec2svc := ec2.New(sess)
 
 	for _, instance := range asg.Instances {
+		ipAddr, ipErr := GetInstancePrivateIP(sess, *instance.InstanceId) // Call and get both return values
+		if ipErr != nil {
+			// Log the error or handle it appropriately
+			fmt.Printf("Warning: could not get IP for instance %s: %v\n", *instance.InstanceId, ipErr)
+			ipAddr = "N/A" // Set a placeholder value if IP couldn't be retrieved
+		}
 		instanceData := InstanceData{
 			ID:             *instance.InstanceId,
 			State:          *instance.LifecycleState,
 			Health:         *instance.HealthStatus,
-			AZ:             *instance.AvailabilityZone,
+			IP:             ipAddr,
 			ProtectedScale: *instance.ProtectedFromScaleIn,
 		}
 
@@ -411,4 +417,47 @@ func extractCauseInfo(cause string) string {
 		}
 	}
 	return "Scale activity"
+}
+
+// GetInstancePrivateIP retrieves the private IP address for a given EC2 instance ID.
+// It requires an initialized AWS session.
+func GetInstancePrivateIP(sess *session.Session, instanceID string) (string, error) {
+	// Create an EC2 service client from the session
+	ec2Svc := ec2.New(sess)
+
+	// Prepare the input for DescribeInstances
+	input := &ec2.DescribeInstancesInput{
+		InstanceIds: []*string{aws.String(instanceID)},
+		// Add filters if needed, e.g., to ensure the instance is running
+		// Filters: []*ec2.Filter{
+		// 	{
+		// 		Name:   aws.String("instance-state-name"),
+		// 		Values: []*string{aws.String("running")},
+		// 	},
+		// },
+	}
+
+	// Call DescribeInstances
+	result, err := ec2Svc.DescribeInstances(input)
+	if err != nil {
+		return "", fmt.Errorf("failed to describe instance %s: %w", instanceID)
+	}
+
+	// Process the results
+	// Check if any reservations were returned
+	if len(result.Reservations) == 0 || len(result.Reservations[0].Instances) == 0 {
+		return "", fmt.Errorf("instance not found: %s", instanceID)
+	}
+
+	// Get the first instance (should be the only one when querying by specific ID)
+	instance := result.Reservations[0].Instances[0]
+
+	// Check if the instance has a private IP address
+	if instance.PrivateIpAddress == nil {
+		return "", fmt.Errorf("instance %s does not have a private IP address", instanceID)
+	}
+
+	// Return the private IP address
+	privateIP := aws.StringValue(instance.PrivateIpAddress)
+	return privateIP, nil
 }
