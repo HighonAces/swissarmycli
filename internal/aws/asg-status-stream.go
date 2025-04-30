@@ -375,7 +375,7 @@ func fetchASGData(sess *session.Session, asgName string) (ASGData, error) {
 				Type:        activityType,
 				InstanceID:  instanceID,
 				Status:      *activity.StatusCode,
-				Description: truncateString(extractCauseInfo(*activity.Cause), 18),
+				Description: truncateString(extractCauseInfo(*activity.Cause), 60),
 			}
 
 			asgData.Activities = append(asgData.Activities, activityData)
