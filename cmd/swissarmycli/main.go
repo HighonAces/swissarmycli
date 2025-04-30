@@ -46,8 +46,65 @@ It provides various utilities for working with Kubernetes, AWS, and more.`,
 			}
 		},
 	}
+
+	// --- ASG Status command ---
+	// Declare variables to hold flag values for asg-status
+	var asgRegion string
+	var asgProfile string
+	var asgRefreshInterval int // Renamed from 'refresh' for clarity
+	var asgStream bool         // Variable to hold the stream flag value
+
+	var asgStatusCmd = &cobra.Command{
+		Use:   "asg-status [ASG_NAME]",
+		Short: "Check or monitor the status of an AWS Auto Scaling Group", // Updated Short description
+		Long: `Checks the current status of an AWS Auto Scaling Group.
+Optionally use the --stream flag to launch an interactive terminal dashboard
+to monitor the ASG, showing instances, states, and activities in real-time.`, // Updated Long description
+		Args: cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			asgName := args[0]
+
+			// Use the variables linked to the flags directly
+			options := aws.MonitorOptions{
+				RefreshInterval: asgRefreshInterval,
+				Region:          asgRegion,
+				Profile:         asgProfile,
+			}
+
+			// Check the boolean variable linked to the --stream flag
+			if asgStream {
+				fmt.Printf("Starting ASG monitor stream for '%s' (Region: %s, Profile: %s, Interval: %ds)...\n",
+					asgName, options.Region, options.Profile, options.RefreshInterval)
+				err := aws.Monitor(asgName, options) // Call the streaming monitor function
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error running monitor stream: %v\n", err)
+					os.Exit(1)
+				}
+				fmt.Println("ASG monitor stopped.")
+			} else {
+				fmt.Printf("Checking current status for ASG '%s' (Region: %s, Profile: %s)...\n",
+					asgName, options.Region, options.Profile)
+				err := aws.OnlyStatus(asgName, options) // Call the non-streaming status function
+				if err != nil {
+					fmt.Fprintf(os.Stderr, "Error checking ASG status: %v\n", err)
+					os.Exit(1)
+				}
+			}
+		},
+	}
+
+	// --- Define flags for asg-status ---
+	// Flag for Region
+	asgStatusCmd.Flags().StringVarP(&asgRegion, "region", "r", "", "AWS region (optional, uses default configuration if not specified)")
+	// Flag for Profile
+	asgStatusCmd.Flags().StringVarP(&asgProfile, "profile", "p", "", "AWS profile name (optional, uses default configuration if not specified)")
+	// Flag for Refresh Interval (only relevant for --stream mode) - Renamed flag to 'interval' for consistency
+	asgStatusCmd.Flags().IntVarP(&asgRefreshInterval, "interval", "i", 5, "Refresh interval in seconds (used with --stream)")
+	// Flag for Streaming - THIS IS THE FIX
+	asgStatusCmd.Flags().BoolVarP(&asgStream, "stream", "s", false, "Launch interactive monitor stream instead of just checking status once")
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(nodeUsageCmd)
+	rootCmd.AddCommand(asgStatusCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
