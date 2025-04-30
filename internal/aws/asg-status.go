@@ -82,7 +82,7 @@ func OnlyStatus(asgName string, options MonitorOptions) error { // Uses MonitorO
 				instance.ID,
 				instance.State,
 				instance.Health,
-				instance.AZ,
+				instance.IP,
 				instance.Type,
 				ageStr,
 				instance.ProtectedScale)
