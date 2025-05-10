@@ -57,3 +57,8 @@ build-all:
 	GOOS=linux GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-linux-amd64 -v ./cmd/swissarmycli
 	GOOS=windows GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-windows-amd64.exe -v ./cmd/swissarmycli
 	GOOS=darwin GOARCH=amd64 $(GOBUILD) -o $(BUILD_DIR)/$(BINARY_NAME)-darwin-amd64 -v ./cmd/swissarmycli
+
+# Install the application to /usr/local/bin (builds first if necessary)
+install-latest: build
+	@echo "Installing latest build of $(BINARY_NAME) to /usr/local/bin..."
+	./scripts/install_latest.sh # Assuming you created scripts/install_latest.sh
