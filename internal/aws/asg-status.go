@@ -64,7 +64,7 @@ func OnlyStatus(asgName string, options MonitorOptions) error { // Uses MonitorO
 		fmt.Println("    No instances found in the group.")
 	} else {
 		w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0) // Align columns
-		fmt.Fprintln(w, "    ID\tSTATE\tHEALTH\tAZ\tTYPE\tAGE\tPROTECTED")
+		fmt.Fprintln(w, "    ID\tSTATE\tHEALTH\tIP\tTYPE\tAGE\tPROTECTED")
 
 		// Uses InstanceData struct from asg-status-stream.go
 		for _, instance := range asgData.Instances {
