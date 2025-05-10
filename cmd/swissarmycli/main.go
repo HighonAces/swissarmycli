@@ -19,18 +19,20 @@ It provides various utilities for working with Kubernetes, AWS, and more.`,
 
 	// --- Parent Connect command ---
 	var connectCmd = &cobra.Command{
-		Use:   "connect",
-		Short: "Connect to AWS resources (nodes, EKS clusters)",
-		Long:  `Provides subcommands to connect to different AWS resources like EC2 instances (nodes) or EKS clusters.`,
+		Use:     "connect",
+		Short:   "Connect to AWS resources (nodes, EKS clusters)",
+		Long:    `Provides subcommands to connect to different AWS resources like EC2 instances (nodes) or EKS clusters.`,
+		Aliases: []string{"con"},
 		// If no subcommand is given, Cobra will show help for connectCmd
 	}
 
 	// --- Connect Node subcommand ---
 	var connectNodeCmd = &cobra.Command{
-		Use:   "node [nodeName]",
-		Short: "Connect to an AWS worker node using SSM",
-		Long:  `Connect to an AWS worker node in a Kubernetes cluster using AWS Systems Manager (SSM).`,
-		Args:  cobra.ExactArgs(1),
+		Use:     "node [nodeName]",
+		Short:   "Connect to an AWS worker node using SSM",
+		Long:    `Connect to an AWS worker node in a Kubernetes cluster using AWS Systems Manager (SSM).`,
+		Aliases: []string{"n", "nd"},
+		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			nodeName := args[0]
 			err := aws.ConnectToNode(nodeName)
@@ -47,7 +49,8 @@ It provides various utilities for working with Kubernetes, AWS, and more.`,
 		Short: "Connect to an EKS cluster by updating kubeconfig",
 		Long: `Searches for EKS clusters across US regions (us-east-1, us-east-2, us-west-1, us-west-2)
 matching the partial name and updates kubeconfig for the selected cluster.`,
-		Args: cobra.ExactArgs(1),
+		Aliases: []string{"c", "cl", "eks"},
+		Args:    cobra.ExactArgs(1),
 		Run: func(cmd *cobra.Command, args []string) {
 			partialName := args[0]
 			// Get flags if any are added to this command in the future (e.g., specific profile)
