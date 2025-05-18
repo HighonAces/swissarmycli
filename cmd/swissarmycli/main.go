@@ -6,6 +6,7 @@ import (
 
 	"github.com/HighonAces/swissarmycli/internal/aws"
 	"github.com/HighonAces/swissarmycli/internal/k8s"
+	"github.com/HighonAces/swissarmycli/internal/validator"
 	"github.com/spf13/cobra"
 )
 
@@ -138,9 +139,29 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 	asgStatusCmd.Flags().IntVarP(&asgRefreshInterval, "interval", "i", 5, "Refresh interval in seconds (used with --stream)")
 	// Flag for Streaming - THIS IS THE FIX
 	asgStatusCmd.Flags().BoolVarP(&asgStream, "stream", "s", false, "Launch interactive monitor stream instead of just checking status once")
+
+	// --- Validate command ---
+	var validateCmd = &cobra.Command{
+		Use:   "validate [filepath]",
+		Short: "Validate the syntax of a file (e.g., YAML)",
+		Long:  `Validates the syntax of a specified file. Currently supports YAML.`,
+		Args:  cobra.ExactArgs(1), // Requires exactly one argument: the filepath
+		Run: func(cmd *cobra.Command, args []string) {
+			filePath := args[0]
+			fmt.Printf("Validating YAML file: %s\n", filePath)
+			err := validator.ValidateYAMLFile(filePath)
+			if err != nil {
+				// The error from yaml.v3 often includes line numbers
+				fmt.Fprintf(os.Stderr, "Validation Error: %v\n", err)
+				os.Exit(1)
+			}
+			fmt.Printf("'%s' is a valid YAML file.\n", filePath)
+		},
+	}
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(nodeUsageCmd)
 	rootCmd.AddCommand(asgStatusCmd)
+	rootCmd.AddCommand(validateCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
