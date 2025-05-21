@@ -76,6 +76,29 @@ Connects to an EKS cluster. This can be useful for quickly switching contexts or
     swissarmycli connect cluster my-eks-cluster-prod
     ```
 
+### `get`
+
+Retrieves information about AWS resources.
+
+#### `get nlb`
+
+Lists Network Load Balancers (NLBs) in a specified AWS region, showing their name, DNS address, and associated IP addresses.
+
+*   **Syntax:** `swissarmycli get nlb --region <aws-region>`
+    *   Shorthand: `swissarmycli get nlb -r <aws-region>`
+*   **Arguments & Flags:**
+    *   `--region`, `-r` (string, **required**): The AWS region to query for NLBs (e.g., `us-east-1`, `eu-west-2`).
+*   **Example:**
+    ```bash
+    swissarmycli get nlb --region us-east-1
+    ```
+*   **Output Format:**
+    ```
+    NLB NAME      DNS                                                 IP(s)
+    my-nlb-1      my-nlb-1-abcdef1234567890.elb.us-east-1.amazonaws.com   192.0.2.1, 198.51.100.5
+    another-nlb   another-nlb-0987654321fedcba.elb.us-east-1.amazonaws.com 203.0.113.10
+    ```
+
 ### `node-usage`
 
 Displays a summary table of resource utilization across all nodes in your Kubernetes cluster. Shows CPU/Memory capacity, total pod requests, total pod limits, and current real-time usage (requires Metrics Server).

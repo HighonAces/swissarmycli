@@ -3,6 +3,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
+	"text/tabwriter"
 
 	"github.com/HighonAces/swissarmycli/internal/aws"
 	"github.com/HighonAces/swissarmycli/internal/k8s"
@@ -162,6 +164,63 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 	rootCmd.AddCommand(nodeUsageCmd)
 	rootCmd.AddCommand(asgStatusCmd)
 	rootCmd.AddCommand(validateCmd)
+
+	// --- Parent Get command ---
+	var getCmd = &cobra.Command{
+		Use:   "get",
+		Short: "Get AWS resource information",
+		Long:  `Provides subcommands to retrieve information about various AWS resources.`,
+	}
+
+	// --- Get NLB subcommand ---
+	var nlbRegion string // Variable to hold the region flag for nlbCmd
+	var nlbCmd = &cobra.Command{
+		Use:   "nlb",
+		Short: "List Network Load Balancers (NLBs) and their details",
+		Long:  `Fetches and displays NLB names, DNS addresses, and their associated IP addresses for a given AWS region.`,
+		Run: func(cmd *cobra.Command, args []string) {
+			// nlbRegion is already populated by Cobra due to StringVarP
+			// No need to call cmd.Flags().GetString("region") if using the global nlbRegion variable
+
+			nlbs, err := aws.ListNLBs(nlbRegion)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error fetching NLBs: %v\n", err)
+				os.Exit(1)
+			}
+
+			if len(nlbs) == 0 {
+				fmt.Printf("No Network Load Balancers found in region %s\n", nlbRegion)
+				return
+			}
+
+			// Initialize tabwriter
+			w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0) // Use ' ' for padding, last param 0 for default
+			fmt.Fprintln(w, "NLB NAME\tDNS\tIP(s)") // Header with tabs
+
+			for _, nlb := range nlbs {
+				ipsStr := strings.Join(nlb.IPs, ", ")
+				if ipsStr == "" {
+					ipsStr = "N/A"
+				}
+				fmt.Fprintf(w, "%s\t%s\t%s\n", nlb.Name, nlb.DNSName, ipsStr)
+			}
+
+			w.Flush() // Flush the tabwriter buffer to stdout
+		},
+	}
+
+	// Define flags for nlbCmd
+	nlbCmd.Flags().StringVarP(&nlbRegion, "region", "r", "", "AWS region to fetch NLBs from (e.g., us-west-2)")
+	if err := nlbCmd.MarkFlagRequired("region"); err != nil {
+		fmt.Fprintf(os.Stderr, "Error marking flag 'region' as required: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Add subcommands to getCmd
+	getCmd.AddCommand(nlbCmd)
+
+	// Add getCmd to rootCmd
+	rootCmd.AddCommand(getCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
