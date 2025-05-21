@@ -41,14 +41,85 @@ bash sudo mv ./bin/swissarmycli /usr/local/bin/
 ## Usage
 
 ### General Help
+
+```bash
 swissarmycli --help
+```
 
-### Connect to a Node via SSM
+## CLI Command Usage
 
-This command finds the AWS instance ID associated with the given Kubernetes node name and starts an interactive SSM session.
-bash swissarmycli connect <kubernetes-node-name>
-Example:
-swissarmycli connect ip-10-20-30-40.us-west-2.compute.internal
+This section details the usage of available commands within Swiss Army CLI.
 
-### Node Usage
-swissarmycli node-usage
+### `connect`
+
+Connect to AWS resources.
+
+#### `connect node [nodeName]`
+
+Connects directly to an AWS EC2 instance backing a Kubernetes node using AWS Systems Manager (SSM) Start Session. It automatically looks up the instance ID and region from the node's ProviderID.
+
+*   **Aliases:** `n`, `nd`
+*   **Syntax:** `swissarmycli connect node <kubernetes-node-name>`
+*   **Example:**
+    ```bash
+    swissarmycli connect node ip-10-20-30-40.us-west-2.compute.internal
+    ```
+
+#### `connect cluster [partial-cluster-name]`
+
+Connects to an EKS cluster. This can be useful for quickly switching contexts or accessing cluster resources. *(Further details on how this connection is established should be added once the functionality is clear, e.g., updates kubeconfig, opens console, etc.)*
+
+*   **Aliases:** `c`, `cl`, `eks`
+*   **Syntax:** `swissarmycli connect cluster <partial-cluster-name>`
+*   **Example:**
+    ```bash
+    swissarmycli connect cluster my-eks-cluster-prod
+    ```
+
+### `node-usage`
+
+Displays a summary table of resource utilization across all nodes in your Kubernetes cluster. Shows CPU/Memory capacity, total pod requests, total pod limits, and current real-time usage (requires Metrics Server).
+
+*   **Syntax:** `swissarmycli node-usage`
+*   **Example:**
+    ```bash
+    swissarmycli node-usage
+    ```
+
+### `asg-status [ASG_NAME]`
+
+Displays the status of an AWS Auto Scaling Group (ASG), including instance health, lifecycle states, and scaling activities.
+
+*   **Syntax:** `swissarmycli asg-status <asg-name> [flags]`
+*   **Arguments:**
+    *   `ASG_NAME`: The name of the Auto Scaling Group.
+*   **Flags:**
+    *   `--region`, `-r`: AWS region where the ASG is located (e.g., `us-east-1`).
+    *   `--profile`, `-p`: AWS CLI profile to use for credentials (e.g., `my-aws-profile`).
+    *   `--interval`, `-i`: Refresh interval in seconds when streaming (e.g., `10`). Defaults to 5.
+    *   `--stream`, `-s`: Continuously stream the ASG status.
+*   **Examples:**
+    ```bash
+    swissarmycli asg-status my-asg-name
+    ```
+    ```bash
+    swissarmycli asg-status my-asg-name --region us-west-2 --profile production
+    ```
+    ```bash
+    swissarmycli asg-status my-asg-name --stream
+    ```
+    ```bash
+    swissarmycli asg-status my-asg-name -s -i 15 -r eu-central-1
+    ```
+
+### `validate [filepath]`
+
+Validates the syntax and structure of a given configuration file (e.g., Kubernetes manifests, Helm charts, etc.). *(The specific types of files validated and the nature of validation should be clarified as the feature is developed.)*
+
+*   **Syntax:** `swissarmycli validate <filepath>`
+*   **Arguments:**
+    *   `filepath`: Path to the file to be validated.
+*   **Example:**
+    ```bash
+    swissarmycli validate ./path/to/your/kubernetes-deployment.yaml
+    ```
