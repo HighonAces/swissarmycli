@@ -174,11 +174,29 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 		},
 	}
 	revealSecretCmd.Flags().StringVarP(&secretNamespace, "namespace", "n", "", "Namespace of the secret")
+	var certNamespace string
+	var checkCertCmd = &cobra.Command{
+		Use:   "check-cert [secret-name]",
+		Short: "Check TLS certificate details and expiry",
+		Long:  "Check TLS certificate details including expiry date from a Kubernetes secret",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			secretName := args[0]
+			err := k8s.CheckTLSSecret(secretName, certNamespace)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error checking certificate: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+	checkCertCmd.Flags().StringVarP(&certNamespace, "namespace", "n", "", "Namespace of the secret")
+	
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(nodeUsageCmd)
 	rootCmd.AddCommand(asgStatusCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(revealSecretCmd)
+	rootCmd.AddCommand(checkCertCmd)	
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
