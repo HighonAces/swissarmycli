@@ -190,13 +190,26 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 		},
 	}
 	checkCertCmd.Flags().StringVarP(&certNamespace, "namespace", "n", "", "Namespace of the secret")
-	
+	var costEstimateCmd = &cobra.Command{
+		Use:   "cost-estimate",
+		Short: "Estimate costs for current cluster",
+		Long:  "Analyze current cluster resources and provide cost estimation",
+		Run: func(cmd *cobra.Command, args []string) {
+			err := k8s.EstimateClusterCost()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error estimating cluster cost: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(nodeUsageCmd)
 	rootCmd.AddCommand(asgStatusCmd)
 	rootCmd.AddCommand(validateCmd)
 	rootCmd.AddCommand(revealSecretCmd)
 	rootCmd.AddCommand(checkCertCmd)	
+	rootCmd.AddCommand(costEstimateCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)

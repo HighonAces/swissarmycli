@@ -440,7 +440,7 @@ func GetInstancePrivateIP(sess *session.Session, instanceID string) (string, err
 	// Call DescribeInstances
 	result, err := ec2Svc.DescribeInstances(input)
 	if err != nil {
-		return "", fmt.Errorf("failed to describe instance %s: %w", instanceID)
+		return "", fmt.Errorf("failed to describe instance %s: %w", instanceID, err)
 	}
 
 	// Process the results
