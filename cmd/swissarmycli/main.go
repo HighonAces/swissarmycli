@@ -158,10 +158,27 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 			fmt.Printf("'%s' is a valid YAML file.\n", filePath)
 		},
 	}
+	var secretNamespace string
+	var revealSecretCmd = &cobra.Command{
+		Use:   "reveal-secret [secret-name]",
+		Short: "find, decode and print a secret",
+		Long:  "This command will find the secret if namespace is not given then decodes the secret and prints it",
+		Args:  cobra.ExactArgs(1),
+		Run: func(cmd *cobra.Command, args []string) {
+			secretName := args[0]
+			err := k8s.RevealSecret(secretName, secretNamespace)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error revealing secret: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+	revealSecretCmd.Flags().StringVarP(&secretNamespace, "namespace", "n", "", "Namespace of the secret")
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(nodeUsageCmd)
 	rootCmd.AddCommand(asgStatusCmd)
 	rootCmd.AddCommand(validateCmd)
+	rootCmd.AddCommand(revealSecretCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
