@@ -4,18 +4,13 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"sync"
 	"text/tabwriter"
 
 	"github.com/HighonAces/swissarmycli/internal/k8s/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/client-go/kubernetes"
-	"k8s.io/client-go/tools/clientcmd"
-	"k8s.io/client-go/util/homedir"
 	metricsv1beta1 "k8s.io/metrics/pkg/apis/metrics/v1beta1"
-	"k8s.io/metrics/pkg/client/clientset/versioned"
 )
 
 // ShowNodeUsage displays CPU and memory requests and limits for all nodes
@@ -155,50 +150,4 @@ type nodeInfo struct {
 	memoryRequests float64
 	memoryLimits   float64
 	memoryUsage    float64
-}
-
-// getKubernetesClients creates the Kubernetes clientset and metrics clientset
-func getKubernetesClients() (*kubernetes.Clientset, *versioned.Clientset, error) {
-	// Find home directory for kubeconfig
-	home := homedir.HomeDir()
-	kubeconfigPath := filepath.Join(home, ".kube", "config")
-
-	// Override with KUBECONFIG env var if present
-	if kubeconfig := os.Getenv("KUBECONFIG"); kubeconfig != "" {
-		kubeconfigPath = kubeconfig
-	}
-
-	// Build config from kubeconfig file
-	config, err := clientcmd.BuildConfigFromFlags("", kubeconfigPath)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error building kubeconfig: %w", err)
-	}
-
-	// Create clientset for API resources
-	clientset, err := kubernetes.NewForConfig(config)
-	if err != nil {
-		return nil, nil, fmt.Errorf("error creating Kubernetes client: %w", err)
-	}
-
-	// Create metrics clientset for node metrics
-	metricsClient, err := versioned.NewForConfig(config)
-	if err != nil {
-		return clientset, nil, fmt.Errorf("error creating Metrics client: %w", err)
-	}
-
-	return clientset, metricsClient, nil
-}
-
-// getNodeMetrics fetches metrics for a specific node
-func getNodeMetrics(metricsClient *versioned.Clientset, nodeName string) (*metricsv1beta1.NodeMetrics, error) {
-	if metricsClient == nil {
-		return nil, fmt.Errorf("metrics client not initialized")
-	}
-
-	metrics, err := metricsClient.MetricsV1beta1().NodeMetricses().Get(context.TODO(), nodeName, metav1.GetOptions{})
-	if err != nil {
-		return nil, err
-	}
-
-	return metrics, nil
 }
