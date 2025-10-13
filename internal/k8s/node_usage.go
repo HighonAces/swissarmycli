@@ -5,12 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"sync"
 	"text/tabwriter"
 
 	"github.com/HighonAces/swissarmycli/internal/k8s/common"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/homedir"
@@ -20,111 +20,141 @@ import (
 
 // ShowNodeUsage displays CPU and memory requests and limits for all nodes
 func ShowNodeUsage() error {
-	clientset, err := common.GetKubernetesClient() // Use the new public function
+	clientset, err := common.GetKubernetesClient()
 	if err != nil {
 		return fmt.Errorf("failed to create Kubernetes client: %w", err)
 	}
 
-	metricsClient, err := common.GetMetricsClient() // Use the new public function
+	metricsClient, err := common.GetMetricsClient()
 	if err != nil {
-		// Decide how to handle metrics client failure. Maybe just log and continue?
 		fmt.Fprintf(os.Stderr, "Warning: could not create metrics client: %v. Usage data will be unavailable.\n", err)
-		// metricsClient will be nil, the rest of the code needs to handle this gracefully
-	}
-
-	// Get all nodes
-	nodes, err := clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
-	if err != nil {
-		return fmt.Errorf("failed to get nodes: %w", err)
 	}
 
 	fmt.Println("Fetching node resource usage information...")
 
-	// Create a new tabwriter to format the output
+	// Fetch all data concurrently
+	var wg sync.WaitGroup
+	var nodes *corev1.NodeList
+	var pods *corev1.PodList
+	var nodeMetrics *metricsv1beta1.NodeMetricsList
+	var nodeErr, podErr, metricsErr error
+
+	wg.Add(2)
+	
+	go func() {
+		defer wg.Done()
+		nodes, nodeErr = clientset.CoreV1().Nodes().List(context.TODO(), metav1.ListOptions{})
+	}()
+	
+	go func() {
+		defer wg.Done()
+		pods, podErr = clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{})
+	}()
+
+	if metricsClient != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			nodeMetrics, metricsErr = metricsClient.MetricsV1beta1().NodeMetricses().List(context.TODO(), metav1.ListOptions{})
+		}()
+	}
+
+	wg.Wait()
+
+	if nodeErr != nil {
+		return fmt.Errorf("failed to get nodes: %w", nodeErr)
+	}
+	if podErr != nil {
+		return fmt.Errorf("failed to get pods: %w", podErr)
+	}
+
+	// Build node stats
+	nodeStats := make(map[string]*nodeInfo)
+	for _, node := range nodes.Items {
+		nodeStats[node.Name] = &nodeInfo{
+			name:           node.Name,
+			cpuCapacity:    float64(node.Status.Capacity.Cpu().MilliValue()) / 1000,
+			memoryCapacity: float64(node.Status.Capacity.Memory().Value()) / (1024 * 1024 * 1024),
+		}
+	}
+
+	// Process pods
+	for _, pod := range pods.Items {
+		if pod.Status.Phase != corev1.PodRunning || pod.Spec.NodeName == "" {
+			continue
+		}
+
+		nodeInfo := nodeStats[pod.Spec.NodeName]
+		if nodeInfo == nil {
+			continue
+		}
+
+		for _, container := range pod.Spec.Containers {
+			if cpu, ok := container.Resources.Requests[corev1.ResourceCPU]; ok {
+				nodeInfo.cpuRequests += float64(cpu.MilliValue()) / 1000
+			}
+			if memory, ok := container.Resources.Requests[corev1.ResourceMemory]; ok {
+				nodeInfo.memoryRequests += float64(memory.Value()) / (1024 * 1024 * 1024)
+			}
+			if cpu, ok := container.Resources.Limits[corev1.ResourceCPU]; ok {
+				nodeInfo.cpuLimits += float64(cpu.MilliValue()) / 1000
+			}
+			if memory, ok := container.Resources.Limits[corev1.ResourceMemory]; ok {
+				nodeInfo.memoryLimits += float64(memory.Value()) / (1024 * 1024 * 1024)
+			}
+		}
+	}
+
+	// Add metrics data
+	if nodeMetrics != nil && metricsErr == nil {
+		for _, metric := range nodeMetrics.Items {
+			if nodeInfo, exists := nodeStats[metric.Name]; exists {
+				nodeInfo.cpuUsage = float64(metric.Usage.Cpu().MilliValue()) / 1000
+				nodeInfo.memoryUsage = float64(metric.Usage.Memory().Value()) / (1024 * 1024 * 1024)
+			}
+		}
+	}
+
+	// Output results
 	w := tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
 	fmt.Fprintln(w, "NODE\tCPU CAPACITY\tCPU REQUESTS\tCPU LIMITS\tCPU USAGE\tMEMORY CAPACITY\tMEMORY REQUESTS\tMEMORY LIMITS\tMEMORY USAGE")
 
-	// Process each node
-	for _, node := range nodes.Items {
-		nodeName := node.Name
-
-		// Get node metrics
-		nodeMetrics, err := getNodeMetrics(metricsClient, nodeName)
-		if err != nil {
-			fmt.Fprintf(os.Stderr, "Warning: could not get metrics for node %s: %v\n", nodeName, err)
+	for _, nodeInfo := range nodeStats {
+		cpuUsage := "N/A"
+		memoryUsage := "N/A"
+		if nodeInfo.cpuUsage > 0 {
+			cpuUsage = fmt.Sprintf("%.2f (%.0f%%)", nodeInfo.cpuUsage, nodeInfo.cpuUsage*100/nodeInfo.cpuCapacity)
+		}
+		if nodeInfo.memoryUsage > 0 {
+			memoryUsage = fmt.Sprintf("%.2fGi (%.0f%%)", nodeInfo.memoryUsage, nodeInfo.memoryUsage*100/nodeInfo.memoryCapacity)
 		}
 
-		// Get node capacity
-		cpuCapacity := node.Status.Capacity.Cpu().MilliValue()
-		memoryCapacity := node.Status.Capacity.Memory().Value() / (1024 * 1024) // Convert to MiB
-
-		// Get all pods on this node
-		fieldSelector := fields.SelectorFromSet(fields.Set{"spec.nodeName": nodeName})
-		pods, err := clientset.CoreV1().Pods("").List(context.TODO(), metav1.ListOptions{
-			FieldSelector: fieldSelector.String(),
-		})
-		if err != nil {
-			return fmt.Errorf("failed to get pods for node %s: %w", nodeName, err)
-		}
-
-		// Calculate total resource requests and limits for the node
-		var cpuRequests, cpuLimits int64
-		var memoryRequests, memoryLimits int64
-
-		for _, pod := range pods.Items {
-			// Skip pods that are not running
-			if pod.Status.Phase != corev1.PodRunning {
-				continue
-			}
-
-			// Sum resource requests and limits from all containers in the pod
-			for _, container := range pod.Spec.Containers {
-				requests := container.Resources.Requests
-				limits := container.Resources.Limits
-
-				if cpu, ok := requests[corev1.ResourceCPU]; ok {
-					cpuRequests += cpu.MilliValue()
-				}
-				if memory, ok := requests[corev1.ResourceMemory]; ok {
-					memoryRequests += memory.Value() / (1024 * 1024) // Convert to MiB
-				}
-
-				if cpu, ok := limits[corev1.ResourceCPU]; ok {
-					cpuLimits += cpu.MilliValue()
-				}
-				if memory, ok := limits[corev1.ResourceMemory]; ok {
-					memoryLimits += memory.Value() / (1024 * 1024) // Convert to MiB
-				}
-			}
-		}
-
-		// Display CPU usage in millicores and memory in MiB
-		var cpuUsage, memoryUsage string
-		if nodeMetrics != nil {
-			cpuUsageValue := nodeMetrics.Usage.Cpu().MilliValue()
-			memoryUsageValue := nodeMetrics.Usage.Memory().Value() / (1024 * 1024) // Convert to MiB
-			cpuUsage = fmt.Sprintf("%dm (%d%%)", cpuUsageValue, cpuUsageValue*100/cpuCapacity)
-			memoryUsage = fmt.Sprintf("%dMi (%d%%)", memoryUsageValue, memoryUsageValue*100/memoryCapacity)
-		} else {
-			cpuUsage = "N/A"
-			memoryUsage = "N/A"
-		}
-
-		// Print row for this node
-		fmt.Fprintf(w, "%s\t%dm\t%dm (%d%%)\t%dm (%d%%)\t%s\t%dMi\t%dMi (%d%%)\t%dMi (%d%%)\t%s\n",
-			nodeName,
-			cpuCapacity,
-			cpuRequests, cpuRequests*100/cpuCapacity,
-			cpuLimits, cpuLimits*100/cpuCapacity,
+		fmt.Fprintf(w, "%s\t%.2f\t%.2f (%.0f%%)\t%.2f (%.0f%%)\t%s\t%.2fGi\t%.2fGi (%.0f%%)\t%.2fGi (%.0f%%)\t%s\n",
+			nodeInfo.name,
+			nodeInfo.cpuCapacity,
+			nodeInfo.cpuRequests, nodeInfo.cpuRequests*100/nodeInfo.cpuCapacity,
+			nodeInfo.cpuLimits, nodeInfo.cpuLimits*100/nodeInfo.cpuCapacity,
 			cpuUsage,
-			memoryCapacity,
-			memoryRequests, memoryRequests*100/memoryCapacity,
-			memoryLimits, memoryLimits*100/memoryCapacity,
+			nodeInfo.memoryCapacity,
+			nodeInfo.memoryRequests, nodeInfo.memoryRequests*100/nodeInfo.memoryCapacity,
+			nodeInfo.memoryLimits, nodeInfo.memoryLimits*100/nodeInfo.memoryCapacity,
 			memoryUsage)
 	}
 
 	w.Flush()
 	return nil
+}
+
+type nodeInfo struct {
+	name           string
+	cpuCapacity    float64
+	cpuRequests    float64
+	cpuLimits      float64
+	cpuUsage       float64
+	memoryCapacity float64
+	memoryRequests float64
+	memoryLimits   float64
+	memoryUsage    float64
 }
 
 // getKubernetesClients creates the Kubernetes clientset and metrics clientset

@@ -202,7 +202,18 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 			}
 		},
 	}
-
+	var podDensityCmd = &cobra.Command{
+		Use:   "pod-density",
+		Short: "Display pod density across nodes with deployment/daemonset/statefulset information",
+		Long:  "Show the number of pods per node along with their deployment/daemonset/statefulset names, resource requests and limits using an interactive table view",
+		Run: func(cmd *cobra.Command, args []string) {
+			err := k8s.ShowPodDensity()
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error displaying pod density: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(nodeUsageCmd)
 	rootCmd.AddCommand(asgStatusCmd)
@@ -210,6 +221,7 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 	rootCmd.AddCommand(revealSecretCmd)
 	rootCmd.AddCommand(checkCertCmd)	
 	rootCmd.AddCommand(costEstimateCmd)
+	rootCmd.AddCommand(podDensityCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)
