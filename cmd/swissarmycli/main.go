@@ -214,6 +214,22 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 			}
 		},
 	}
+
+	// --- Get Snapshot command ---
+	var snapshotFormat string
+	var getSnapshotCmd = &cobra.Command{
+		Use:   "getsnapshot",
+		Short: "Capture the current state of the EKS cluster",
+		Long:  "Collect cluster resources (nodes, services, deployments, pods, etc.) and save to file for state comparison",
+		Run: func(cmd *cobra.Command, args []string) {
+			err := k8s.GetClusterSnapshot(snapshotFormat)
+			if err != nil {
+				fmt.Fprintf(os.Stderr, "Error capturing cluster snapshot: %v\n", err)
+				os.Exit(1)
+			}
+		},
+	}
+	getSnapshotCmd.Flags().StringVar(&snapshotFormat, "format", "yaml", "Output format (yaml or txt)")
 	rootCmd.AddCommand(connectCmd)
 	rootCmd.AddCommand(nodeUsageCmd)
 	rootCmd.AddCommand(asgStatusCmd)
@@ -222,6 +238,7 @@ to monitor the ASG, showing instances, states, and activities in real-time.`, //
 	rootCmd.AddCommand(checkCertCmd)	
 	rootCmd.AddCommand(costEstimateCmd)
 	rootCmd.AddCommand(podDensityCmd)
+	rootCmd.AddCommand(getSnapshotCmd)
 
 	if err := rootCmd.Execute(); err != nil {
 		fmt.Fprintf(os.Stderr, "Error executing command: %v\n", err)

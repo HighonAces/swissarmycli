@@ -75,7 +75,7 @@ func getInstanceIDFromNodeName(nodeName string) (string, string) {
 
 	// Validate against known US regions
 	if !validUSRegions[region] {
-		fmt.Println("unknown or unsupported region: %s", region)
+		fmt.Printf("unknown or unsupported region: %s\n", region)
 		return "", ""
 	}
 	return instanceID, region
